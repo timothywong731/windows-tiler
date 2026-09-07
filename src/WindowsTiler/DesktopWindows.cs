@@ -69,11 +69,17 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
             if (!NativeMethods.SetWindowPlacement(hwnd, in normal)) throw new Win32Exception();
             WaitFor(() => !NativeMethods.IsIconic(hwnd) && !NativeMethods.IsZoomed(hwnd), "Window did not restore.");
         }
-        // SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER.
-        if (!NativeMethods.SetWindowPos(hwnd, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x4214))
-            throw new Win32Exception();
-        WaitFor(() => NativeMethods.GetWindowRect(hwnd, out var actual) && ToRect(actual) == bounds,
-            "The application did not accept its tile size or position.");
+        // A window that isn't per-monitor-v2 DPI aware can be auto-rescaled by Windows the first time it
+        // crosses into a differently-scaled monitor, landing at the wrong size; once its DPI context
+        // matches the target monitor, a second identical request reliably lands exactly.
+        for (var attempt = 1; ; attempt++)
+        {
+            // SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER.
+            if (!NativeMethods.SetWindowPos(hwnd, 0, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x4214))
+                throw new Win32Exception();
+            if (TryWaitFor(() => NativeMethods.GetWindowRect(hwnd, out var actual) && ToRect(actual) == bounds)) return;
+            if (attempt == 2) throw new InvalidOperationException("The application did not accept its tile size or position.");
+        }
     }
     /// <summary>Restores the original placement and show state.</summary>
     public void Restore(WindowSnapshot window)
@@ -81,12 +87,19 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
         EnsureCurrent(window);
         var original = FromPlacement(window.Placement);
         original.Flags |= 4; // Request cross-thread restoration without waiting inside an unresponsive app.
-        if (!NativeMethods.SetWindowPlacement((nint)window.Handle, in original)) throw new Win32Exception();
-        WaitFor(() =>
+        var hwnd = (nint)window.Handle;
+        // Same DPI-rescale risk as Place: restoring across a monitor with a different scale factor than
+        // the window's current one can take the OS's own auto-resize on the first attempt.
+        for (var attempt = 1; ; attempt++)
         {
-            var actual = ReadPlacement((nint)window.Handle);
-            return actual.ShowCommand == window.Placement.ShowCommand && ToRect(actual.NormalPosition) == window.Placement.NormalBounds;
-        }, "The application did not restore its original placement.");
+            if (!NativeMethods.SetWindowPlacement(hwnd, in original)) throw new Win32Exception();
+            if (TryWaitFor(() =>
+            {
+                var actual = ReadPlacement(hwnd);
+                return actual.ShowCommand == window.Placement.ShowCommand && ToRect(actual.NormalPosition) == window.Placement.NormalBounds;
+            })) return;
+            if (attempt == 2) throw new InvalidOperationException("The application did not restore its original placement.");
+        }
     }
     /// <summary>Releases the virtual desktop manager when the operation finishes.</summary>
     public void Dispose() => Marshal.FinalReleaseComObject(desktopManager);
@@ -160,12 +173,18 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
     /// <summary>Allows asynchronous window operations one second to complete, then triggers transaction recovery.</summary>
     private static void WaitFor(Func<bool> condition, string failure)
     {
+        if (!TryWaitFor(condition)) throw new InvalidOperationException(failure);
+    }
+
+    /// <summary>Polls for up to one second, returning whether the condition was met.</summary>
+    private static bool TryWaitFor(Func<bool> condition)
+    {
         var timer = Stopwatch.StartNew();
         do
         {
-            if (condition()) return;
+            if (condition()) return true;
             Thread.Sleep(15);
         } while (timer.ElapsedMilliseconds < 1000);
-        throw new InvalidOperationException(failure);
+        return false;
     }
 }
