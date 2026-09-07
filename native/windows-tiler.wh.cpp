@@ -58,6 +58,7 @@ using std::nullptr_t; // Windhawk's headers also support toolchains exposing thi
 using HandleClickFn = HRESULT(WINAPI*)(void*, void*, void*, void*);
 using OnContextMenuFn = void(WINAPI*)(void*, POINT, HWND, bool, void*, void*);
 using ContextRequestedFn = void(WINAPI*)(void*, void*, void*);
+using StaticContextRequestedFn = void(WINAPI*)(void*, void*);
 using GetWindowFn = HWND(WINAPI*)(void*);
 using GetGroupFn = void*(WINAPI*)(void*, void*, int*);
 using GetCountFn = int(WINAPI*)(void*);
@@ -65,7 +66,12 @@ using GetItemFn = void*(WINAPI*)(void*, int);
 
 HandleClickFn g_handleClick;
 OnContextMenuFn g_onContextMenu;
+// Different Windows 11 builds route a taskbar right-click through different Taskbar.View
+// entry points (TaskbarResources, TaskListButton, or a static TaskListButtonHandlers helper).
+// All three are hooked as optional; whichever one the current build actually calls wins.
 ContextRequestedFn g_contextRequested;
+ContextRequestedFn g_contextRequestedButton;
+StaticContextRequestedFn g_contextRequestedHandlers;
 GetWindowFn g_getListWindow, g_getWindow, g_getImmersiveWindow;
 GetGroupFn g_getButtonGroup;
 GetCountFn g_getGroupType, g_getCount;
@@ -269,13 +275,34 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
 }
 
 /// Records the UI-thread request; the bounded timestamp accommodates newer asynchronous taskbar dispatch.
-void WINAPI ContextRequestedHook(void* self, void* sender, void* args) {
+void RecordContextRequest() {
     SHORT rawShift = g_getKeyState(VK_SHIFT);
     g_requestClassic = !(rawShift & 0x8000);
     g_requestTime = GetTickCount64();
     Wh_Log(L"Windows Tiler: ContextRequested rawShift=%d requestClassic=%d", rawShift & 0x8000 ? 1 : 0, (bool)g_requestClassic);
+}
+
+/// TaskbarResources' instance-method route — historically the primary entry point.
+void WINAPI ContextRequestedHook(void* self, void* sender, void* args) {
+    RecordContextRequest();
     g_insideContextRequest = true;
     g_contextRequested(self, sender, args);
+    g_insideContextRequest = false;
+}
+
+/// TaskListButton's own instance-method route, used instead of TaskbarResources on some builds.
+void WINAPI ContextRequestedButtonHook(void* self, void* sender, void* args) {
+    RecordContextRequest();
+    g_insideContextRequest = true;
+    g_contextRequestedButton(self, sender, args);
+    g_insideContextRequest = false;
+}
+
+/// TaskListButtonHandlers' static-method route, used instead of the above on some builds.
+void WINAPI ContextRequestedHandlersHook(void* sender, void* args) {
+    RecordContextRequest();
+    g_insideContextRequest = true;
+    g_contextRequestedHandlers(sender, args);
     g_insideContextRequest = false;
 }
 
@@ -285,12 +312,17 @@ SHORT WINAPI GetKeyStateHook(int key) {
     return key == VK_SHIFT && g_insideContextRequest ? value ^ 0x8000 : value;
 }
 
-/// Resolves the context-request entry point in the taskbar XAML module.
+/// Resolves whichever context-request entry point the current taskbar build actually uses.
 bool HookView(HMODULE module) {
     WindhawkUtils::SYMBOL_HOOK hooks[] = {
-        {{LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"}, &g_contextRequested, ContextRequestedHook},
+        {{LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"}, &g_contextRequested, ContextRequestedHook, true},
+        {{LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"}, &g_contextRequestedButton, ContextRequestedButtonHook, true},
+        {{LR"(public: static void __cdecl winrt::Taskbar::implementation::TaskListButtonHandlers::HandleContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"}, &g_contextRequestedHandlers, ContextRequestedHandlersHook, true},
     };
-    return WindhawkUtils::HookSymbols(module, hooks, ARRAYSIZE(hooks));
+    if (!WindhawkUtils::HookSymbols(module, hooks, ARRAYSIZE(hooks))) return false;
+    Wh_Log(L"Windows Tiler: context-request routes resources=%d button=%d handlers=%d",
+        g_contextRequested ? 1 : 0, g_contextRequestedButton ? 1 : 0, g_contextRequestedHandlers ? 1 : 0);
+    return g_contextRequested || g_contextRequestedButton || g_contextRequestedHandlers;
 }
 
 /// Finds the taskbar view module used by the current Windows 11 build.
