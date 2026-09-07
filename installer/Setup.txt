@@ -1,0 +1,37 @@
+WINDOWS TILER
+
+The Windows Tiler helper is installed for your Windows account. Its .NET runtime
+is included; a separate .NET installation is not required.
+
+ENABLE THE TASKBAR MENU
+
+1. Install Windhawk from https://windhawk.net/ if it is not already installed.
+2. In Windhawk, choose Create a new mod.
+3. Open windows-tiler.wh.cpp in this installation folder with Notepad.
+4. Copy its full contents into the Windhawk mod editor, then compile and enable.
+5. The default helper path is %LOCALAPPDATA%\WindowsTiler\WindowsTiler.exe.
+   If a custom location was used, set helperPath to WindowsTiler.exe in that folder.
+
+Right-click a taskbar application group and open the Windows Tiler submenu.
+Choose Tile on this monitor, Tile across all monitors, or Undo last tiling.
+Shift + right-click opens the normal Windows Jump List.
+
+This MSI does not install, modify, or automatically enable Windhawk. The native
+bridge is experimental and depends on private Windows symbols for your build.
+
+UPDATE / REPAIR
+
+Run a newer Windows Tiler MSI to upgrade in place. Reinstalling the same version
+is supported. To repair, run: msiexec /fa "path\to\WindowsTiler-version-x64.msi"
+
+UNINSTALL
+
+First disable or remove Windows Tiler in Windhawk so its menu hooks stop running.
+Then open Windows Settings > Apps > Installed apps > Windows Tiler > Uninstall,
+or use the Uninstall Windows Tiler Start Menu entry.
+
+Uninstall removes MSI-owned files, shortcuts, installer registration and known
+undo snapshots. Upgrades preserve undo snapshots. Unrelated files in the install
+folder are not deleted. Windhawk and its separately registered mod are not removed.
+
+Project and source: https://github.com/timothywong731/windows-tiler

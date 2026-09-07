@@ -1,0 +1,101 @@
+name: Build and test MSI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Optional MSI version (for example 1.2.3); defaults to installer/Version.props'
+        required: false
+        type: string
+
+# Building and uploading workflow artifacts needs no repository write permission.
+permissions:
+  contents: read
+
+concurrency:
+  group: msi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Pin actions to reviewed commits rather than mutable tags.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build application and run core tests
+        run: ./scripts/test.ps1
+
+      - name: Select package versions
+        id: versions
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          [xml]$versions = Get-Content installer/Version.props -Raw
+          $version = $versions.Project.PropertyGroup.InstallerVersion.InnerText
+          if ($env:REQUESTED_VERSION) { $version = $env:REQUESTED_VERSION }
+          elseif ($env:REF_TYPE -eq 'tag') { $version = $env:REF_NAME.TrimStart('v') }
+          if ($version -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,5}$') { throw 'Expected an MSI version such as 1.2.3 or a tag v1.2.3.' }
+          $parts = $version.Split('.') | ForEach-Object { [int]$_ }
+          if ($parts[0] -gt 255 -or $parts[1] -gt 255 -or $parts[2] -gt 65535) { throw 'Version exceeds MSI limits.' }
+          $version = $parts -join '.'
+          # Build a strictly newer fixture to test upgrades without publishing that fixture.
+          if ($parts[2] -lt 65535) { $parts[2]++ }
+          elseif ($parts[1] -lt 255) { $parts[1]++; $parts[2] = 0 }
+          elseif ($parts[0] -lt 255) { $parts[0]++; $parts[1] = 0; $parts[2] = 0 }
+          else { throw 'No higher MSI version remains for the upgrade fixture.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "upgrade=$($parts -join '.')" >> $env:GITHUB_OUTPUT
+
+      - name: Build distributable MSI
+        env:
+          MSI_VERSION: ${{ steps.versions.outputs.version }}
+        run: ./scripts/build-msi.ps1 -Version $env:MSI_VERSION
+
+      - name: Build upgrade test fixture
+        env:
+          UPGRADE_VERSION: ${{ steps.versions.outputs.upgrade }}
+        run: ./scripts/build-msi.ps1 -Version $env:UPGRADE_VERSION -OutputDirectory .local/upgrade-fixture
+
+      - name: Test install, repair, upgrade and uninstall
+        env:
+          MSI_VERSION: ${{ steps.versions.outputs.version }}
+          UPGRADE_VERSION: ${{ steps.versions.outputs.upgrade }}
+        run: |
+          ./scripts/test-msi.ps1 -MsiPath "artifacts/installer/WindowsTiler-$env:MSI_VERSION-x64.msi" -UpgradeMsiPath ".local/upgrade-fixture/WindowsTiler-$env:UPGRADE_VERSION-x64.msi"
+
+      - name: Upload tested installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: WindowsTiler-${{ steps.versions.outputs.version }}-x64-msi
+          path: |
+            artifacts/installer/*.msi
+            artifacts/installer/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload installer test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: installer-test-logs
+          path: .local/msi-tests/**/*.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,90 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- Keep this UpgradeCode stable for the lifetime of the per-user x64 product. -->
+  <Package Name="Windows Tiler" Manufacturer="Windows Tiler" Version="$(InstallerVersion)"
+           UpgradeCode="76F85DCF-DDFD-4D92-A477-DF22FE3CBB37" Language="1033"
+           Scope="perUser" InstallerVersion="500" Compressed="yes">
+    <SummaryInformation Description="Windows Tiler per-user installer" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <!-- Remove the old version inside the transaction, so a failed upgrade can roll it back. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer Windows Tiler version is already installed."
+                  AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize" />
+
+    <!-- Windows reports Windows 10/11 using the same VersionNT family; inspect the build number. -->
+    <Property Id="WINDOWS_BUILD">
+      <RegistrySearch Id="WindowsBuild" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR (VersionNT64 AND WINDOWS_BUILD &gt;= 22000 AND NOT Arm64)"
+            Message="Windows Tiler requires Windows 11 x64 (build 22000 or newer)." />
+    <Launch Condition="NOT ALLUSERS" Message="Windows Tiler installs for the current user only. Do not set ALLUSERS." />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/timothywong731/windows-tiler" />
+    <Property Id="ARPCOMMENTS" Value="Taskbar-group tiling helper and Windhawk bridge source. Windhawk activation is separate." />
+    <!-- Repair and upgrades must reuse a custom destination instead of reverting to LocalAppData. -->
+    <Property Id="INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="ExistingInstallFolder" Root="HKCU" Key="Software\WindowsTiler\Installer"
+                      Name="InstallFolder" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <!-- Matches the native bridge's default helperPath; no administrator rights are needed. -->
+      <Directory Id="INSTALLFOLDER" Name="WindowsTiler">
+        <Component Id="Helper" Guid="A80D1E98-8B7A-4D52-8A0E-52141A4F8228">
+          <File Id="HelperExe" Source="$(PayloadDir)\WindowsTiler.exe" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Helper" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="Bridge" Guid="0F6249DF-3666-4DA9-9118-D9D3D35089C3">
+          <File Id="BridgeSource" Source="$(PayloadDir)\windows-tiler.wh.cpp" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Bridge" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="SetupGuide" Guid="F428D615-EA8A-43A8-BCA4-04BB101057FF">
+          <File Id="SetupGuideFile" Source="$(PayloadDir)\Setup.txt" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Setup" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="BridgeLicense" Guid="B88AD5F6-AE27-4124-A9C8-457118E0B5B0">
+          <File Source="$(PayloadDir)\COPYING" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="License" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="ProjectNotices" Guid="AE68F6EC-9B13-4060-8E30-E0A585E51D17">
+          <File Source="$(PayloadDir)\THIRD-PARTY-NOTICES.md" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Notices" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="RuntimeLicense" Guid="076731A2-0260-4D24-8168-A9FDFF55D56D">
+          <File Source="$(PayloadDir)\DOTNET-LICENSE.txt" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="RuntimeLicense" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="RuntimeNotices" Guid="3408D745-4F73-46E3-B6AF-AD12A61EB80A">
+          <File Source="$(PayloadDir)\DOTNET-NOTICES.txt" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="RuntimeNotices" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="InstallationRegistration" Guid="*">
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="InstallFolder" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+          <!-- Remove only known application state on final uninstall; keep it through upgrades. -->
+          <RemoveFile Id="UndoSnapshots" Name="undo-*.json" Property="UNDO_CLEANUP_FOLDER" On="uninstall" />
+          <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <SetProperty Id="UNDO_CLEANUP_FOLDER" Value="[INSTALLFOLDER]" Before="RemoveFiles" Sequence="execute"
+                 Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuDir" Name="Windows Tiler">
+        <Component Id="StartMenuShortcuts" Guid="*">
+          <Shortcut Id="AppShortcut" Name="Windows Tiler" Target="[INSTALLFOLDER]WindowsTiler.exe" Arguments="status" WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut Id="SetupShortcut" Name="Set up taskbar menu" Target="[INSTALLFOLDER]Setup.txt" WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut Id="UninstallShortcut" Name="Uninstall Windows Tiler" Target="[System64Folder]msiexec.exe" Arguments="/x [ProductCode]" />
+          <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Shortcuts" Value="1" Type="integer" KeyPath="yes" />
+          <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Complete" Title="Windows Tiler" Level="1">
+      <ComponentRef Id="Helper" /><ComponentRef Id="Bridge" /><ComponentRef Id="SetupGuide" />
+      <ComponentRef Id="BridgeLicense" /><ComponentRef Id="ProjectNotices" />
+      <ComponentRef Id="RuntimeLicense" /><ComponentRef Id="RuntimeNotices" />
+      <ComponentRef Id="InstallationRegistration" /><ComponentRef Id="StartMenuShortcuts" />
+    </Feature>
+  </Package>
+</Wix>

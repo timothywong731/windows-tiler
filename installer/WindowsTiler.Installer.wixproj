@@ -1,0 +1,18 @@
+<!-- WiX 5 is pinned explicitly; newer toolset majors change the build-tool licensing terms. -->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <Import Project="Version.props" />
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>WindowsTiler-$(InstallerVersion)-x64</OutputName>
+    <DefineConstants>InstallerVersion=$(InstallerVersion);PayloadDir=$(PayloadDir)</DefineConstants>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- ICE61 flags intentional same-version CI rebuild upgrades. ICE91 assumes an all-users
+         option, which this package explicitly rejects. All other MSI validation remains enabled. -->
+    <SuppressIces>ICE61;ICE91</SuppressIces>
+  </PropertyGroup>
+  <!-- Packaging is intentionally separate from the application solution's ordinary build. -->
+  <Target Name="RequirePublishedPayload" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(PayloadDir)\WindowsTiler.exe')" Text="Run scripts/build-msi.ps1 to publish and package Windows Tiler." />
+  </Target>
+</Project>
