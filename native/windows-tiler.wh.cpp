@@ -49,7 +49,9 @@ using std::nullptr_t; // Windhawk's headers also support toolchains exposing thi
 #include <commctrl.h>
 #include <atomic>
 #include <cstdint>
+#include <cwctype>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Resolved shell interfaces; signatures are from Microsoft's public symbol files.
@@ -297,9 +299,25 @@ HMODULE ViewModule() {
     return module ? module : GetModuleHandleW(L"ExplorerExtensions.dll");
 }
 
+/// Case-insensitive substring search, used only to spot a taskbar module by an unexpected name.
+bool ContainsCaseInsensitive(std::wstring_view text, std::wstring_view needle) {
+    if (needle.empty() || text.size() < needle.size()) return false;
+    for (size_t i = 0; i + needle.size() <= text.size(); i++) {
+        bool match = true;
+        for (size_t j = 0; j < needle.size(); j++) {
+            if (towlower(text[i + j]) != towlower(needle[j])) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
 /// Completes view-hook installation when Explorer loads its taskbar after this mod initializes.
 HMODULE WINAPI LoadLibraryHook(LPCWSTR path, HANDLE file, DWORD flags) {
     HMODULE module = g_loadLibrary(path, file, flags);
+    if (module && path && ContainsCaseInsensitive(path, L"taskbar")) {
+        Wh_Log(L"Windows Tiler: loaded module %s", path);
+    }
     if (module && module == ViewModule() && !g_viewHooked.exchange(true)) {
         if (HookView(module)) {
             Wh_ApplyHookOperations();
