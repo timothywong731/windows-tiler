@@ -99,6 +99,7 @@ struct MenuContext {
     std::vector<HWND> windows;
     POINT point{};
     bool attached = false;
+    bool menuShown = false;
     UINT commands[3]{};
     UINT selected = 0;
 };
@@ -187,7 +188,10 @@ LRESULT CALLBACK MenuOwnerSubclass(HWND window, UINT message, WPARAM wParam, LPA
 template<typename ShowMenu>
 BOOL WithTilingMenu(HMENU menu, UINT flags, int x, int y, HWND owner, ShowMenu show) {
     auto context = g_menuContext;
-    if (context) Wh_Log(L"Windows Tiler: TrackPopupMenu menu=%p attached=%d windows=%zu", menu, context->attached, context->windows.size());
+    if (context) {
+        context->menuShown = true;
+        Wh_Log(L"Windows Tiler: TrackPopupMenu menu=%p attached=%d windows=%zu", menu, context->attached, context->windows.size());
+    }
     if (!context || context->attached || context->windows.empty()) return show();
     int originalCount = GetMenuItemCount(menu);
     if (originalCount < 0) return show();
@@ -240,15 +244,22 @@ BOOL WINAPI TrackMenuExHook(HMENU menu, UINT flags, int x, int y, HWND owner, LP
 }
 
 /// Scopes copied group handles to the synchronous native context-menu call, including nested calls.
-void WINAPI OnContextMenuHook(void* self, POINT point, HWND window, bool value, void* group, void* item) {
+/// Returns whether Explorer actually displayed a menu, so callers can fall back to a different item.
+bool InvokeContextMenu(void* self, POINT point, HWND window, bool value, void* group, void* item) {
     MenuContext context{GroupWindows(self, group), point};
     Wh_Log(L"Windows Tiler: OnContextMenu self=%p group=%p item=%p windows=%zu", self, group, item, context.windows.size());
     auto previous = g_menuContext;
     g_menuContext = &context;
     g_onContextMenu(self, point, window, value, group, item);
     g_menuContext = previous;
-    Wh_Log(L"Windows Tiler: OnContextMenu returned selected=%u", context.selected);
+    Wh_Log(L"Windows Tiler: OnContextMenu returned selected=%u menuShown=%d", context.selected, context.menuShown);
     if (context.selected) LaunchHelper(context);
+    return context.menuShown;
+}
+
+/// Symbol hook for CTaskListWnd::OnContextMenu; kept void to match the real signature exactly.
+void WINAPI OnContextMenuHook(void* self, POINT point, HWND window, bool value, void* group, void* item) {
+    InvokeContextMenu(self, point, window, value, group, item);
 }
 
 /// Redirects a classic-menu request through Windows' existing group-menu implementation.
@@ -264,13 +275,19 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
         if (site) {
             POINT point{};
             GetCursorPos(&point);
-            // Leave item as Explorer passed it (null): on this build, forcing a representative
-            // item via GetTaskItem(0) for a single-item group silently suppressed the menu
-            // entirely, while a null item lets OnContextMenu resolve it correctly on its own.
             auto buttonGroup = group ? g_getButtonGroup(base, group, nullptr) : nullptr;
             int groupType = buttonGroup ? g_getGroupType(buttonGroup) : -1;
-            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d item=%p", buttonGroup, groupType, item);
-            OnContextMenuHook(site, point, g_getListWindow(site), false, group, item);
+            void* resolvedItem = (!item && buttonGroup && groupType == 1) ? g_getItem(buttonGroup, 0) : item;
+            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d item=%p resolvedItem=%p", buttonGroup, groupType, item, resolvedItem);
+            HWND listWindow = g_getListWindow(site);
+            // A representative item gives the correct per-window menu (Restore/Move/Size/.../Close)
+            // where it works, but on some builds a resolved item silently suppresses the menu
+            // entirely; fall back to the item Explorer originally passed (usually null) so at
+            // least a menu appears.
+            if (!InvokeContextMenu(site, point, listWindow, false, group, resolvedItem) && resolvedItem != item) {
+                Wh_Log(L"Windows Tiler: HandleClick retrying with original item after no menu shown");
+                InvokeContextMenu(site, point, listWindow, false, group, item);
+            }
             return S_OK;
         }
     }
