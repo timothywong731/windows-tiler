@@ -74,12 +74,6 @@ internal static class NativeMethods
     /// <summary>Reads minimum tracking metrics at the window's current DPI.</summary>
     [DllImport("user32.dll")]
     internal static extern int GetSystemMetricsForDpi(int index, uint dpi);
-    /// <summary>Locates the monitor containing a point, with nearest-monitor fallback.</summary>
-    [DllImport("user32.dll")]
-    internal static extern nint MonitorFromPoint(Point point, uint flags);
-    /// <summary>Reads effective monitor DPI to conservatively budget minimum window dimensions.</summary>
-    [DllImport("shcore.dll")]
-    internal static extern int GetDpiForMonitor(nint monitor, int type, out uint x, out uint y);
 }
 
 /// <summary>The documented COM interface for checking membership of the current virtual desktop.</summary>

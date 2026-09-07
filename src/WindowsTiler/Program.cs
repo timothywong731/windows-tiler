@@ -33,7 +33,7 @@ internal static class Program
                 var session = Process.GetCurrentProcess().SessionId;
                 var store = new UndoStore(Path.Combine(directory, $"undo-{session}.json"));
                 var areas = DesktopWindows.WorkAreas(command);
-                using var desktop = new DesktopWindows(DesktopWindows.MaximumDpi(areas));
+                using var desktop = new DesktopWindows();
                 var operation = new TilingOperation(desktop, store);
                 var result = command.Action == "undo" ? operation.Undo() : operation.Tile(command.Windows!, areas);
                 if (result.Skipped > 0)

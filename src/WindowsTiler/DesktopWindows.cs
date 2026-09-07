@@ -11,12 +11,10 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
 {
     // Keep the COM object alive for a single STA helper invocation.
     private readonly IVirtualDesktopManager desktopManager;
-    private readonly uint targetDpi;
 
-    /// <summary>Creates a desktop adapter; target DPI conservatively scales minimum sizes when moving displays.</summary>
-    public DesktopWindows(uint targetDpi = 0)
+    /// <summary>Creates a desktop adapter.</summary>
+    public DesktopWindows()
     {
-        this.targetDpi = targetDpi;
         var type = Type.GetTypeFromCLSID(new Guid("AA509086-5CA9-4C25-8F95-589D3C07B48A"), true)!;
         desktopManager = (IVirtualDesktopManager)Activator.CreateInstance(type)!;
     }
@@ -43,9 +41,11 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
         };
         // SMTO_ABORTIFHUNG | SMTO_BLOCK bounds each foreign-app query to 200ms.
         if (NativeMethods.GetMinMaxInfo(hwnd, 0x24, 0, ref limits, 3, 200, out _) == 0) return null;
-        var scale = targetDpi == 0 ? 1 : Math.Max(1, (double)targetDpi / dpi);
-        var minimum = new WindowSize(Math.Max(1, (int)Math.Ceiling(limits.MinTrackSize.X * scale)),
-            Math.Max(1, (int)Math.Ceiling(limits.MinTrackSize.Y * scale)));
+        // Use the window's minimum size at its current DPI rather than conservatively inflating it for a
+        // hypothetical destination monitor: which monitor a window lands on isn't known here, and guessing
+        // wrong (e.g. the highest DPI among several differently-scaled monitors) rejects layouts that would
+        // actually fit. Place's retry already covers a window being rescaled after crossing a DPI boundary.
+        var minimum = new WindowSize(Math.Max(1, limits.MinTrackSize.X), Math.Max(1, limits.MinTrackSize.Y));
         return new(handle, identity.Value.Pid, identity.Value.Started, ToPlacement(placement), minimum);
     }
     /// <summary>Checks the captured identity before each desktop mutation.</summary>
@@ -110,18 +110,6 @@ public sealed class DesktopWindows : IWindowAccess, IDisposable
         var screens = command.AllMonitors ? Screen.AllScreens.OrderBy(s => s.Bounds.X).ThenBy(s => s.Bounds.Y).ToArray()
             : [Screen.FromPoint(new(command.X, command.Y))];
         return screens.Select(s => new Rect(s.WorkingArea.X, s.WorkingArea.Y, s.WorkingArea.Width, s.WorkingArea.Height)).ToArray();
-    }
-
-    /// <summary>Finds the highest target DPI to avoid proposing tiles smaller than scaled tracking constraints.</summary>
-    public static uint MaximumDpi(IReadOnlyList<Rect> areas)
-    {
-        uint maximum = 96;
-        foreach (var area in areas)
-        {
-            var monitor = NativeMethods.MonitorFromPoint(new() { X = area.X, Y = area.Y }, 2);
-            if (NativeMethods.GetDpiForMonitor(monitor, 0, out var dpi, out _) >= 0) maximum = Math.Max(maximum, dpi);
-        }
-        return maximum;
     }
 
     /// <summary>Fails closed when Windows cannot establish a window's virtual desktop membership.</summary>
