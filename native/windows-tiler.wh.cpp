@@ -47,6 +47,7 @@ not install a replacement taskbar and never loads the .NET runtime into Explorer
 using std::nullptr_t; // Windhawk's headers also support toolchains exposing this name globally.
 #include <windhawk_utils.h>
 #include <commctrl.h>
+#include <unknwn.h>
 #include <atomic>
 #include <cstdint>
 #include <cwctype>
@@ -284,7 +285,14 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
             // where it works, but on some builds a resolved item silently suppresses the menu
             // entirely; fall back to the item Explorer originally passed (usually null) so at
             // least a menu appears.
-            if (!InvokeContextMenu(site, point, listWindow, false, group, resolvedItem) && resolvedItem != item) {
+            bool weResolvedIt = resolvedItem != item;
+            // ITaskItem is a COM interface; GetTaskItem may hand back a borrowed pointer that
+            // isn't guaranteed to outlive this call without our own reference.
+            auto resolvedUnknown = weResolvedIt ? reinterpret_cast<IUnknown*>(resolvedItem) : nullptr;
+            if (resolvedUnknown) resolvedUnknown->AddRef();
+            bool shown = InvokeContextMenu(site, point, listWindow, false, group, resolvedItem);
+            if (resolvedUnknown) resolvedUnknown->Release();
+            if (!shown && weResolvedIt) {
                 Wh_Log(L"Windows Tiler: HandleClick retrying with original item after no menu shown");
                 InvokeContextMenu(site, point, listWindow, false, group, item);
             }
