@@ -17,10 +17,9 @@ internal static class Program
             var command = Command.Parse(args);
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) || !Environment.Is64BitProcess)
                 throw new InvalidOperationException("Windows Tiler requires Windows 11 x64.");
-            if (command.Action is "status" or "--help")
+            if (command.Action is "status" or "setup" or "--help")
             {
-                MessageBox.Show("Windows Tiler\n\nRight-click a taskbar application group to tile on this monitor or across all monitors.\n\nThe native Windows Tiler bridge must be enabled in Windhawk. Shift + right-click opens the normal Jump List.\n\nCommands: tile --scope monitor|all --point X Y --windows HWND...; undo; status.",
-                    "Windows Tiler", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ShowSetupStatus(command.Action == "setup");
                 return 0;
             }
             // One operation per interactive session; a crashed helper leaves its snapshot recoverable.
@@ -49,5 +48,28 @@ internal static class Program
             MessageBox.Show(ex.Message, "Windows Tiler", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return 1;
         }
+    }
+
+    /// <summary>Reports bridge registration and gives the user the exact one-time setup steps.</summary>
+    private static void ShowSetupStatus(bool openWindhawk)
+    {
+        var windhawk = FindWindhawk();
+        var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Windhawk", "userprofile.json");
+        var enabled = File.Exists(profile) && File.ReadAllText(profile).Contains("local@windows-tiler", StringComparison.OrdinalIgnoreCase);
+        var state = enabled ? "Windhawk reports the Windows Tiler mod is registered." : "Windhawk does not report the Windows Tiler mod as enabled.";
+        var text = $"Windows Tiler\n\n{state}\n\n1. Open Windhawk and choose Create a new mod.\n2. Paste windows-tiler.wh.cpp from this installation folder into the editor.\n3. Compile and enable the mod, then wait for Explorer to reload.\n4. Right-click a grouped taskbar app to see Windows Tiler.\n\nShift + right-click keeps the normal Jump List. DbgViewMini's Listening line only means the viewer is running.\n\nWindhawk: {(windhawk is null ? "not found" : windhawk)}";
+        MessageBox.Show(text, "Windows Tiler setup", MessageBoxButtons.OK, enabled ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        if (openWindhawk && windhawk is not null) Process.Start(new ProcessStartInfo(windhawk) { UseShellExecute = true });
+    }
+
+    /// <summary>Finds the installed Windhawk UI in either native program-files location.</summary>
+    private static string? FindWindhawk()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windhawk", "windhawk.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Windhawk", "windhawk.exe")
+        };
+        return candidates.FirstOrDefault(File.Exists);
     }
 }

@@ -3,16 +3,20 @@ WINDOWS TILER
 The Windows Tiler helper is installed for your Windows account. Its .NET runtime
 is included; a separate .NET installation is not required.
 
-ENABLE THE TASKBAR MENU
+ENABLE THE TASKBAR MENU (ONE-TIME SETUP)
 
 1. Install Windhawk from https://windhawk.net/ if it is not already installed.
-2. In Windhawk, choose Create a new mod.
-3. Open windows-tiler.wh.cpp in this installation folder with Notepad.
-4. Copy its full contents into the Windhawk mod editor, then compile and enable.
-5. The default helper path is %LOCALAPPDATA%\WindowsTiler\WindowsTiler.exe.
+2. Start Windows Tiler from the Start menu; it checks whether Windhawk has registered
+   local@windows-tiler and opens Windhawk for you.
+3. In Windhawk, choose Create a new mod.
+4. Open windows-tiler.wh.cpp in this installation folder with Notepad.
+5. Copy its full contents into the Windhawk mod editor, then compile and enable.
+6. The default helper path is %LOCALAPPDATA%\WindowsTiler\WindowsTiler.exe.
    If a custom location was used, set helperPath to WindowsTiler.exe in that folder.
 
-Right-click a taskbar application group and open the Windows Tiler submenu.
+7. Wait for Windhawk to reload Explorer, then right-click a taskbar application group
+   and open the Windows Tiler submenu. DbgViewMini's "Listening" line only means
+   the viewer is running; use the Windhawk mod log for Wh_ModInit failures.
 Choose Tile on this monitor, Tile across all monitors, or Undo last tiling.
 Shift + right-click opens the normal Windows Jump List.
 

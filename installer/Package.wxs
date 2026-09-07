@@ -72,7 +72,7 @@
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ProgramMenuDir" Name="Windows Tiler">
         <Component Id="StartMenuShortcuts" Guid="*">
-          <Shortcut Id="AppShortcut" Name="Windows Tiler" Target="[INSTALLFOLDER]WindowsTiler.exe" Arguments="status" WorkingDirectory="INSTALLFOLDER" />
+          <Shortcut Id="AppShortcut" Name="Windows Tiler" Target="[INSTALLFOLDER]WindowsTiler.exe" Arguments="setup" WorkingDirectory="INSTALLFOLDER" />
           <Shortcut Id="SetupShortcut" Name="Set up taskbar menu" Target="[INSTALLFOLDER]Setup.txt" WorkingDirectory="INSTALLFOLDER" />
           <Shortcut Id="UninstallShortcut" Name="Uninstall Windows Tiler" Target="[System64Folder]msiexec.exe" Arguments="/x [ProductCode]" />
           <RegistryValue Root="HKCU" Key="Software\WindowsTiler\Installer" Name="Shortcuts" Value="1" Type="integer" KeyPath="yes" />

@@ -7,7 +7,7 @@ public sealed record Command(string Action, bool AllMonitors = false, int X = 0,
     public static Command Parse(string[] args)
     {
         if (args.Length == 0) return new("status");
-        if (args.Length == 1 && args[0] is "status" or "undo" or "--help") return new(args[0]);
+        if (args.Length == 1 && args[0] is "status" or "setup" or "undo" or "--help") return new(args[0]);
         if (args.Length < 8 || args[0] != "tile" || args[1] != "--scope" ||
             args[2] is not ("monitor" or "all") || args[3] != "--point" || args[6] != "--windows" ||
             !int.TryParse(args[4], System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var x) ||
