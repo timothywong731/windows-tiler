@@ -275,20 +275,15 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
         if (site) {
             POINT point{};
             GetCursorPos(&point);
+            // Substituting a representative item for a single-item group (groupType 1) suppresses
+            // the menu entirely on some builds, and calling OnContextMenu a second time for the
+            // same click doesn't recover it either - the first call leaves Explorer's internal
+            // state unable to show a menu on a second attempt regardless of the item passed. Always
+            // pass item as Explorer gave it: the only configuration proven to reliably show a menu.
             auto buttonGroup = group ? g_getButtonGroup(base, group, nullptr) : nullptr;
             int groupType = buttonGroup ? g_getGroupType(buttonGroup) : -1;
-            void* resolvedItem = (!item && buttonGroup && groupType == 1) ? g_getItem(buttonGroup, 0) : item;
-            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d item=%p resolvedItem=%p", buttonGroup, groupType, item, resolvedItem);
-            HWND listWindow = g_getListWindow(site);
-            // A representative item gives the correct per-window menu (Restore/Move/Size/.../Close)
-            // where it works, but on some builds a resolved item silently suppresses the menu
-            // entirely; fall back to the item Explorer originally passed (usually null) so at
-            // least a menu appears.
-            bool weResolvedIt = resolvedItem != item;
-            if (!InvokeContextMenu(site, point, listWindow, false, group, resolvedItem) && weResolvedIt) {
-                Wh_Log(L"Windows Tiler: HandleClick retrying with original item after no menu shown");
-                InvokeContextMenu(site, point, listWindow, false, group, item);
-            }
+            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d item=%p", buttonGroup, groupType, item);
+            InvokeContextMenu(site, point, g_getListWindow(site), false, group, item);
             return S_OK;
         }
     }
