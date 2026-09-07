@@ -264,10 +264,12 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
         if (site) {
             POINT point{};
             GetCursorPos(&point);
+            // Leave item as Explorer passed it (null): on this build, forcing a representative
+            // item via GetTaskItem(0) for a single-item group silently suppressed the menu
+            // entirely, while a null item lets OnContextMenu resolve it correctly on its own.
             auto buttonGroup = group ? g_getButtonGroup(base, group, nullptr) : nullptr;
             int groupType = buttonGroup ? g_getGroupType(buttonGroup) : -1;
-            if (!item && buttonGroup && groupType == 1) item = g_getItem(buttonGroup, 0);
-            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d resolvedItem=%p", buttonGroup, groupType, item);
+            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d item=%p", buttonGroup, groupType, item);
             OnContextMenuHook(site, point, g_getListWindow(site), false, group, item);
             return S_OK;
         }
