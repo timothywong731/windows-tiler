@@ -179,6 +179,7 @@ LRESULT CALLBACK MenuOwnerSubclass(HWND window, UINT message, WPARAM wParam, LPA
 template<typename ShowMenu>
 BOOL WithTilingMenu(HMENU menu, UINT flags, int x, int y, HWND owner, ShowMenu show) {
     auto context = g_menuContext;
+    if (context) Wh_Log(L"Windows Tiler: TrackPopupMenu menu=%p attached=%d windows=%zu", menu, context->attached, context->windows.size());
     if (!context || context->attached || context->windows.empty()) return show();
     int originalCount = GetMenuItemCount(menu);
     if (originalCount < 0) return show();
@@ -233,6 +234,7 @@ BOOL WINAPI TrackMenuExHook(HMENU menu, UINT flags, int x, int y, HWND owner, LP
 /// Scopes copied group handles to the synchronous native context-menu call, including nested calls.
 void WINAPI OnContextMenuHook(void* self, POINT point, HWND window, bool value, void* group, void* item) {
     MenuContext context{GroupWindows(self, group), point};
+    Wh_Log(L"Windows Tiler: OnContextMenu self=%p group=%p item=%p windows=%zu", self, group, item, context.windows.size());
     auto previous = g_menuContext;
     g_menuContext = &context;
     g_onContextMenu(self, point, window, value, group, item);
@@ -242,15 +244,21 @@ void WINAPI OnContextMenuHook(void* self, POINT point, HWND window, bool value, 
 
 /// Redirects a classic-menu request through Windows' existing group-menu implementation.
 HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* options) {
-    if (g_requestClassic && GetTickCount64() - g_requestTime <= 200) {
+    bool wantsClassic = g_requestClassic;
+    ULONGLONG elapsed = GetTickCount64() - g_requestTime;
+    Wh_Log(L"Windows Tiler: HandleClick wantsClassic=%d elapsed=%llu self=%p group=%p item=%p", wantsClassic, elapsed, self, group, item);
+    if (wantsClassic && elapsed <= 200) {
         g_requestClassic = false;
         auto base = FindSubobject(self, g_listBaseVtable, -1);
         auto site = FindSubobject(base, g_listSiteVtable, 1);
+        Wh_Log(L"Windows Tiler: HandleClick base=%p site=%p", base, site);
         if (site) {
             POINT point{};
             GetCursorPos(&point);
             auto buttonGroup = group ? g_getButtonGroup(base, group, nullptr) : nullptr;
-            if (!item && buttonGroup && g_getGroupType(buttonGroup) == 1) item = g_getItem(buttonGroup, 0);
+            int groupType = buttonGroup ? g_getGroupType(buttonGroup) : -1;
+            if (!item && buttonGroup && groupType == 1) item = g_getItem(buttonGroup, 0);
+            Wh_Log(L"Windows Tiler: HandleClick buttonGroup=%p groupType=%d resolvedItem=%p", buttonGroup, groupType, item);
             OnContextMenuHook(site, point, g_getListWindow(site), false, group, item);
             return S_OK;
         }
@@ -260,8 +268,10 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
 
 /// Records the UI-thread request; the bounded timestamp accommodates newer asynchronous taskbar dispatch.
 void WINAPI ContextRequestedHook(void* self, void* sender, void* args) {
-    g_requestClassic = !(g_getKeyState(VK_SHIFT) & 0x8000);
+    SHORT rawShift = g_getKeyState(VK_SHIFT);
+    g_requestClassic = !(rawShift & 0x8000);
     g_requestTime = GetTickCount64();
+    Wh_Log(L"Windows Tiler: ContextRequested rawShift=%d requestClassic=%d", rawShift & 0x8000 ? 1 : 0, (bool)g_requestClassic);
     g_insideContextRequest = true;
     g_contextRequested(self, sender, args);
     g_insideContextRequest = false;
@@ -291,8 +301,10 @@ HMODULE ViewModule() {
 HMODULE WINAPI LoadLibraryHook(LPCWSTR path, HANDLE file, DWORD flags) {
     HMODULE module = g_loadLibrary(path, file, flags);
     if (module && module == ViewModule() && !g_viewHooked.exchange(true)) {
-        if (HookView(module)) Wh_ApplyHookOperations();
-        else Wh_Log(L"Windows Tiler: taskbar view symbols unavailable; reload the mod after updating.");
+        if (HookView(module)) {
+            Wh_ApplyHookOperations();
+            Wh_Log(L"Windows Tiler: taskbar view hook installed via LoadLibraryHook.");
+        } else Wh_Log(L"Windows Tiler: taskbar view symbols unavailable; reload the mod after updating.");
     }
     return module;
 }
@@ -330,6 +342,9 @@ BOOL Wh_ModInit() {
             return FALSE;
         }
         g_viewHooked = true;
+        Wh_Log(L"Windows Tiler: taskbar view hook installed synchronously in Wh_ModInit.");
+    } else {
+        Wh_Log(L"Windows Tiler: taskbar view module not yet loaded; deferring hook installation.");
     }
     if (!(WindhawkUtils::SetFunctionHook(GetKeyState, GetKeyStateHook, &g_getKeyState) &&
         WindhawkUtils::SetFunctionHook(TrackPopupMenu, TrackMenuHook, &g_trackMenu) &&
