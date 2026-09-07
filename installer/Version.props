@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- MSI accepts three numeric fields. CI release tags can override this version. -->
-    <InstallerVersion Condition="'$(InstallerVersion)' == ''">0.1.0</InstallerVersion>
+    <InstallerVersion Condition="'$(InstallerVersion)' == ''">0.1.2</InstallerVersion>
     <!-- Pin the bundled runtime independently of the SDK used by developers or CI. -->
     <BundledRuntimeVersion>8.0.30</BundledRuntimeVersion>
   </PropertyGroup>

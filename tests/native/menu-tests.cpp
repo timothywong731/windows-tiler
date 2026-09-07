@@ -5,6 +5,7 @@
 #include "../../native/windows-tiler.wh.cpp"
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 
 /// Fails the executable when a user-visible menu contract is violated.
 void Check(bool condition, const char* message) {
@@ -47,6 +48,24 @@ int main() {
         g_menuContext = nullptr;
         result = WithTilingMenu(menu, TPM_RETURNCMD, 0, 0, owner, []() -> BOOL { return 123; });
         Check(result == 123 && GetMenuItemCount(menu) == 1, "Unrelated menu was changed.");
+
+        // Windows can dispatch CTaskListWnd::HandleClick on a worker thread instead of the
+        // UI thread that ran OnTaskListButtonContextRequested (the documented
+        // TaskbarShiftRightClickCrash mitigation). The request-correlation state HandleClickHook
+        // reads must therefore survive a cross-thread read.
+        g_requestClassic = true;
+        g_requestTime = 12345;
+        bool seenOnOtherThread = false;
+        ULONGLONG timeSeenOnOtherThread = 0;
+        std::thread([&] {
+            seenOnOtherThread = g_requestClassic;
+            timeSeenOnOtherThread = g_requestTime;
+        }).join();
+        Check(seenOnOtherThread && timeSeenOnOtherThread == 12345,
+            "Classic-menu request state invisible to the thread that dispatches HandleClick asynchronously.");
+        g_requestClassic = false;
+        g_requestTime = 0;
+
         std::cout << "PASS native menu: augmentation, command IDs, selection, native commands, notification dispatch, cleanup\n";
         DestroyMenu(menu); DestroyWindow(owner);
         return 0;

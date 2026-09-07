@@ -2,7 +2,7 @@
 // @id              windows-tiler
 // @name            Windows Tiler
 // @description     Tile a taskbar application's windows on one monitor or all monitors
-// @version         0.1.0
+// @version         0.1.2
 // @author          Windows Tiler contributors
 // @include         explorer.exe
 // @architecture    x86-64
@@ -79,8 +79,12 @@ decltype(&TrackPopupMenuEx) g_trackMenuEx;
 decltype(&LoadLibraryExW) g_loadLibrary;
 std::atomic<bool> g_viewHooked{false};
 thread_local bool g_insideContextRequest = false;
-thread_local bool g_requestClassic = false;
-thread_local ULONGLONG g_requestTime = 0;
+// Not thread_local: Windows can dispatch CTaskListWnd::HandleClick on a worker thread
+// instead of the UI thread that ran OnTaskListButtonContextRequested (the documented
+// TaskbarShiftRightClickCrash mitigation), so HandleClickHook must see the request that
+// was recorded on a different thread.
+std::atomic<bool> g_requestClassic{false};
+std::atomic<ULONGLONG> g_requestTime{0};
 
 /// Owns copied HWNDs for one synchronous Windows context-menu invocation.
 struct MenuContext {
@@ -296,7 +300,10 @@ HMODULE WINAPI LoadLibraryHook(LPCWSTR path, HANDLE file, DWORD flags) {
 /// Installs hooks only when all required native taskbar symbols resolve on the current build.
 BOOL Wh_ModInit() {
     HMODULE taskbar = LoadLibraryExW(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!taskbar) return FALSE;
+    if (!taskbar) {
+        Wh_Log(L"Windows Tiler: taskbar.dll failed to load.");
+        return FALSE;
+    }
     WindhawkUtils::SYMBOL_HOOK hooks[] = {
         {{LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))"}, &g_handleClick, HandleClickHook},
         {{LR"(public: virtual void __cdecl CTaskListWnd::OnContextMenu(struct tagPOINT,struct HWND__ *,bool,struct ITaskGroup *,struct ITaskItem *))"}, &g_onContextMenu, OnContextMenuHook},
@@ -313,15 +320,26 @@ BOOL Wh_ModInit() {
     };
     bool resolved = WindhawkUtils::HookSymbols(taskbar, hooks, ARRAYSIZE(hooks));
     // Retain the module reference: queued detours must never point into an unloaded taskbar DLL.
-    if (!resolved) return FALSE;
+    if (!resolved) {
+        Wh_Log(L"Windows Tiler: taskbar.dll symbols unavailable on this Windows build.");
+        return FALSE;
+    }
     if (HMODULE view = ViewModule()) {
-        if (!HookView(view)) return FALSE;
+        if (!HookView(view)) {
+            Wh_Log(L"Windows Tiler: taskbar view symbols unavailable on this Windows build.");
+            return FALSE;
+        }
         g_viewHooked = true;
     }
-    return WindhawkUtils::SetFunctionHook(GetKeyState, GetKeyStateHook, &g_getKeyState) &&
+    if (!(WindhawkUtils::SetFunctionHook(GetKeyState, GetKeyStateHook, &g_getKeyState) &&
         WindhawkUtils::SetFunctionHook(TrackPopupMenu, TrackMenuHook, &g_trackMenu) &&
         WindhawkUtils::SetFunctionHook(TrackPopupMenuEx, TrackMenuExHook, &g_trackMenuEx) &&
-        WindhawkUtils::SetFunctionHook(LoadLibraryExW, LoadLibraryHook, &g_loadLibrary);
+        WindhawkUtils::SetFunctionHook(LoadLibraryExW, LoadLibraryHook, &g_loadLibrary))) {
+        Wh_Log(L"Windows Tiler: failed to hook a public Win32 API.");
+        return FALSE;
+    }
+    Wh_Log(L"Windows Tiler: initialized.");
+    return TRUE;
 }
 
 /// Closes the race between the initial module lookup and registering the library-load hook.
