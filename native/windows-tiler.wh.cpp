@@ -247,6 +247,7 @@ void WINAPI OnContextMenuHook(void* self, POINT point, HWND window, bool value, 
     g_menuContext = &context;
     g_onContextMenu(self, point, window, value, group, item);
     g_menuContext = previous;
+    Wh_Log(L"Windows Tiler: OnContextMenu returned selected=%u", context.selected);
     if (context.selected) LaunchHelper(context);
 }
 
@@ -275,16 +276,16 @@ HRESULT WINAPI HandleClickHook(void* self, void* group, void* item, void* option
 }
 
 /// Records the UI-thread request; the bounded timestamp accommodates newer asynchronous taskbar dispatch.
-void RecordContextRequest() {
+void RecordContextRequest(const wchar_t* route) {
     SHORT rawShift = g_getKeyState(VK_SHIFT);
     g_requestClassic = !(rawShift & 0x8000);
     g_requestTime = GetTickCount64();
-    Wh_Log(L"Windows Tiler: ContextRequested rawShift=%d requestClassic=%d", rawShift & 0x8000 ? 1 : 0, (bool)g_requestClassic);
+    Wh_Log(L"Windows Tiler: ContextRequested route=%s rawShift=%d requestClassic=%d", route, rawShift & 0x8000 ? 1 : 0, (bool)g_requestClassic);
 }
 
 /// TaskbarResources' instance-method route — historically the primary entry point.
 void WINAPI ContextRequestedHook(void* self, void* sender, void* args) {
-    RecordContextRequest();
+    RecordContextRequest(L"resources");
     g_insideContextRequest = true;
     g_contextRequested(self, sender, args);
     g_insideContextRequest = false;
@@ -292,7 +293,7 @@ void WINAPI ContextRequestedHook(void* self, void* sender, void* args) {
 
 /// TaskListButton's own instance-method route, used instead of TaskbarResources on some builds.
 void WINAPI ContextRequestedButtonHook(void* self, void* sender, void* args) {
-    RecordContextRequest();
+    RecordContextRequest(L"button");
     g_insideContextRequest = true;
     g_contextRequestedButton(self, sender, args);
     g_insideContextRequest = false;
@@ -300,7 +301,7 @@ void WINAPI ContextRequestedButtonHook(void* self, void* sender, void* args) {
 
 /// TaskListButtonHandlers' static-method route, used instead of the above on some builds.
 void WINAPI ContextRequestedHandlersHook(void* sender, void* args) {
-    RecordContextRequest();
+    RecordContextRequest(L"handlers");
     g_insideContextRequest = true;
     g_contextRequestedHandlers(sender, args);
     g_insideContextRequest = false;
