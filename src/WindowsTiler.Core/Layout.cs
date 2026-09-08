@@ -64,7 +64,12 @@ public static class Layout
                 if (valid && score < bestScore) { best = candidate; bestScore = score; }
             }
             if (best is null)
-                throw new InvalidOperationException("These windows cannot fit without violating their minimum sizes. Try fewer windows or another monitor scope.");
+            {
+                var sizes = string.Join(", ", indices.Select(i => $"{windows[i].Width}x{windows[i].Height}"));
+                throw new InvalidOperationException("These windows cannot fit without violating their minimum sizes. " +
+                    $"Try fewer windows or another monitor scope. Monitor area {area.Width}x{area.Height}, " +
+                    $"{indices.Length} window(s) with minimum sizes: {sizes}.");
+            }
             result.AddRange(best);
         }
         return result;
