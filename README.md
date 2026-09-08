@@ -63,9 +63,9 @@ Newer MSI versions upgrade in place; undo snapshots survive upgrades. A lower ve
 For unattended installation, repair, and removal:
 
 ```powershell
-msiexec /i "WindowsTiler-0.1.2-x64.msi" /qn /norestart
-msiexec /fa "WindowsTiler-0.1.2-x64.msi" /qn /norestart
-msiexec /x "WindowsTiler-0.1.2-x64.msi" /qn /norestart
+msiexec /i "WindowsTiler-0.1.3-x64.msi" /qn /norestart
+msiexec /fa "WindowsTiler-0.1.3-x64.msi" /qn /norestart
+msiexec /x "WindowsTiler-0.1.3-x64.msi" /qn /norestart
 ```
 
 These initial packages are unsigned. Workflow artifacts include a SHA-256 checksum.
@@ -92,8 +92,8 @@ Tag versions must have three numeric fields, such as `v1.2.3`. Manual runs can s
 For local lifecycle testing on an account without an existing Windows Tiler MSI/Start Menu installation:
 
 ```powershell
-.\scripts\build-msi.ps1 -Version 0.1.3 -OutputDirectory .local/upgrade-fixture
-.\scripts\test-msi.ps1 -MsiPath artifacts/installer/WindowsTiler-0.1.2-x64.msi -UpgradeMsiPath .local/upgrade-fixture/WindowsTiler-0.1.3-x64.msi
+.\scripts\build-msi.ps1 -Version 0.1.4 -OutputDirectory .local/upgrade-fixture
+.\scripts\test-msi.ps1 -MsiPath artifacts/installer/WindowsTiler-0.1.3-x64.msi -UpgradeMsiPath .local/upgrade-fixture/WindowsTiler-0.1.4-x64.msi
 ```
 
 The test uses a unique installation directory, temporarily registers the MSI, and uninstalls it afterwards.

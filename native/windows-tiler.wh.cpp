@@ -2,7 +2,7 @@
 // @id              windows-tiler
 // @name            Windows Tiler
 // @description     Tile a taskbar application's windows on one monitor or all monitors
-// @version         0.1.2
+// @version         0.1.3
 // @author          Windows Tiler contributors
 // @include         explorer.exe
 // @architecture    x86-64
