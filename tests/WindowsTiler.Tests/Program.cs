@@ -60,6 +60,27 @@ var tests = new (string Name, Action Run)[]
         Check(tiles.Count == 2, "A window is missing.");
         Check(tiles.All(t => t.Bounds.Width >= 900 && t.Bounds.Height >= 100), "Minimum size ignored.");
     }),
+    ("mixed window sizes split into bands when one grid can't fit either", () =>
+    {
+        WindowSize big = new(774, 774), small = new(516, 516);
+        WindowSize[] windows = [big, small, big, small, big, small, big, small, big, small];
+        foreach (Rect area in new Rect[] { new(0, 0, 3840, 2088), new(0, 0, 5120, 1392) })
+        {
+            var tiles = Layout.Create(windows, [area]);
+            Check(tiles.Count == 10, "A window is missing.");
+            Check(tiles.Select(t => t.WindowIndex).Distinct().Count() == 10, "A window was tiled twice.");
+            foreach (var tile in tiles)
+            {
+                var min = windows[tile.WindowIndex];
+                Check(tile.Bounds.Width >= min.Width && tile.Bounds.Height >= min.Height, "Minimum size ignored.");
+                Check(tile.Bounds.X >= area.X && tile.Bounds.Y >= area.Y &&
+                    tile.Bounds.Right <= area.Right && tile.Bounds.Bottom <= area.Bottom, "Tile leaves the work area.");
+                foreach (var other in tiles.Where(t => t.WindowIndex != tile.WindowIndex))
+                    Check(tile.Bounds.Right <= other.Bounds.X || other.Bounds.Right <= tile.Bounds.X ||
+                        tile.Bounds.Bottom <= other.Bounds.Y || other.Bounds.Bottom <= tile.Bounds.Y, "Tiles overlap.");
+            }
+        }
+    }),
     ("impossible layout fails before any windows can move", () =>
         Throws<InvalidOperationException>(() => Layout.Create([new(900, 700), new(900, 700)], [new(0, 0, 1000, 800)]))),
     ("empty and invalid inputs rejected", () =>
